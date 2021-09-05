@@ -1,0 +1,91 @@
+-module(person).
+-import(lists, [foreach/2]).
+-compile(export_all).
+
+-include_lib("stdlib/include/qlc.hrl").
+
+-define(TABLE,person).
+-define(RECORD,person).
+-record(person,{
+		name,
+		age,
+		sex
+	       }).
+
+% Start Special 
+
+% End Special 
+create_table()->
+    mnesia:create_table(?TABLE, [{attributes, record_info(fields, ?RECORD)}]),
+    mnesia:wait_for_tables([?TABLE], 20000).
+
+create_table_copies(CopyType,NodeList)->
+    case CopyType of
+	ram->
+	    mnesia:create_table(?TABLE, [{attributes, record_info(fields, ?RECORD)},
+					 {ram_copies,NodeList}]);
+	disc->
+	    mnesia:create_table(?TABLE, [{attributes, record_info(fields, ?RECORD)},
+					 {ram_copies,NodeList}]);
+	disc_only_copies ->
+	    mnesia:create_table(?TABLE, [{attributes, record_info(fields, ?RECORD)},
+					 {disc_only_copies,NodeList}])
+    end,
+    mnesia:wait_for_tables([?TABLE], 20000).
+
+add_table_copy(Node,StorageType)->
+    mnesia:add_table_copy(?TABLE, Node, StorageType),
+     Tables=mnesia:system_info(tables),
+	    mnesia:wait_for_tables(Tables,?WAIT_FOR_TABLES);
+create(Name,Age,Sex)->
+    Record=#?RECORD{
+		    name=Name,
+		    age=Age,
+		    sex=Sex
+		   },
+    F = fun() -> mnesia:write(Record) end,
+    mnesia:transaction(F).
+
+age(Name)->
+    read(Name,age).
+sex(Name,sex)->
+    read(Name,sex).
+read(Object,Key)->
+    Return=case read(Object) of
+	       []->
+		   {error,[eexist,Object,?FUNCTION_NAME,?MODULE,?LINE]};
+	       [{Name,Age,Sex}] ->
+		   case  Key of
+		       ssh_info->
+			   {Ip,SshPort,UId,Pwd};
+		       location->
+			   GeoLocation;
+		       Err ->
+			   {error,['Key eexists',Err,?FUNCTION_NAME,?MODULE,?LINE]}
+		   end
+	   end,
+    Return.
+
+read_all() ->
+    Z=do(qlc:q([X || X <- mnesia:table(?TABLE)])),
+    [{Name,Age,Sex}||{?RECORD,Name,Age,Sex}<-Z].
+
+read(Object)->
+    Z=do(qlc:q([X || X <- mnesia:read({?TABLE,Object}),		
+		     X#?RECORD.name==Object])),
+    [{Name,Age,Sex}||{?RECORD,Name,Age,Sex}<-Z].
+
+delete(Object) ->
+    F = fun() -> 
+		mnesia:delete({?TABLE,Object})
+		    
+	end,
+    mnesia:transaction(F).
+
+
+do(Q) ->
+  F = fun() -> qlc:e(Q) end,
+  {atomic, Val} = mnesia:transaction(F),
+  Val.
+
+%%-------------------------------------------------------------------------
